@@ -1,7 +1,6 @@
 package mohajer
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -38,6 +37,57 @@ end
 			"add column x `mysql`",
 			[]itemType{itemAdd, itemWhiteSpace, itemAlpha, itemWhiteSpace, itemAlpha, itemWhiteSpace, itemOptionTag},
 		},
+		{
+			`add #comment `,
+			[]itemType{itemAdd, itemWhiteSpace, itemComment},
+		},
+		{
+			`add "unterminated string `,
+			[]itemType{itemAdd, itemWhiteSpace, itemError},
+		},
+		{
+			"add `un-terminated option",
+			[]itemType{itemAdd, itemWhiteSpace, itemError},
+		},
+		{
+			`#comment
+  #comment again
+       #comment
+ `,
+			[]itemType{itemComment, itemNewLine, itemComment, itemNewLine, itemComment, itemNewLine},
+		},
+		{
+			"add\t\t\n",
+			[]itemType{itemAdd, itemNewLine},
+		},
+		{
+			"add\n@",
+			[]itemType{itemAdd, itemNewLine, itemError},
+		},
+		{
+			"\n+@",
+			[]itemType{itemNewLine, itemSkipDown, itemError},
+		},
+		{
+			"test:@",
+			[]itemType{itemAlpha, itemColon, itemError},
+		},
+		{
+			`add "string \" escaped"`,
+			[]itemType{itemAdd, itemWhiteSpace, itemString},
+		},
+		{
+			`add "string \t wrong escaped"`,
+			[]itemType{itemAdd, itemWhiteSpace, itemError},
+		},
+		{
+			`add@`,
+			[]itemType{itemAdd, itemError},
+		},
+		{
+			`add @`,
+			[]itemType{itemAdd, itemWhiteSpace, itemError},
+		},
 	}
 )
 
@@ -46,11 +96,19 @@ func TestBasicLexer(t *testing.T) {
 		l := lex(allLexeme[i].input)
 		require.NotNil(t, l)
 		cnt := 0
-		fmt.Println("---")
 		for j := range l.items {
-			fmt.Println(j)
 			assert.Equal(t, allLexeme[i].lexeme[cnt], j.typ)
 			cnt++
 		}
+		assert.Len(t, allLexeme[i].lexeme, cnt)
 	}
+}
+
+func TestOtherLexer(t *testing.T) {
+	l := lex("name test")
+	l.drain()
+	assert.Zero(t, l.next())
+
+	assert.Panics(t, func() { l.discard(';') })
+	assert.Zero(t, l.nextItem())
 }

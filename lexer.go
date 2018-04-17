@@ -22,6 +22,7 @@ const (
 	itemWhiteSpace
 	itemSkipUp   // -
 	itemSkipDown // +
+	itemComment
 	itemString
 	itemOptionTag
 	itemColon
@@ -36,16 +37,23 @@ const (
 	itemEnd
 )
 
-var keywords = map[string]itemType{
-	"name":   itemName,
-	"use":    itemUse,
-	"create": itemCreate,
-	"add":    itemAdd,
-	"remove": itemRemove,
-	"set":    itemSet,
-	"rename": itemRename,
-	"end":    itemEnd,
-}
+var (
+	keywords = map[string]itemType{
+		"name":   itemName,
+		"use":    itemUse,
+		"create": itemCreate,
+		"add":    itemAdd,
+		"remove": itemRemove,
+		"set":    itemSet,
+		"rename": itemRename,
+		"end":    itemEnd,
+	}
+
+	operators = map[rune]itemType{
+		'-': itemSkipUp,
+		'+': itemSkipDown,
+	}
+)
 
 type item struct {
 	typ   itemType
@@ -84,6 +92,12 @@ func (l *lexer) peek() rune {
 // backup steps back one rune. Can only be called once per call of next.
 func (l *lexer) backup() {
 	l.pos -= l.width
+}
+
+func (l *lexer) discard(expected rune) {
+	if n := l.next(); n != expected {
+		panic(fmt.Sprintf("expected %v but got %v and is not handled by the lexer", expected, n))
+	}
 }
 
 // emit passes an item back to the client.
@@ -144,10 +158,6 @@ func isAlphaNumeric(r rune) bool {
 	return r == '_' || unicode.IsLetter(r) || unicode.IsDigit(r)
 }
 
-func isNumeric(r rune) bool {
-	return unicode.IsDigit(r)
-}
-
 // run runs the state machine for the lexer.
 func (l *lexer) run() {
 	for state := lexStart; state != nil; {
@@ -168,35 +178,33 @@ func lexNewLine(l *lexer) stateFn {
 	l.acceptRun("\n\t ") // also space and tabs
 	l.emit(itemNewLine)
 	rn := l.peek()
-	if rn == '+' || rn == '-' {
+	if operators[rn] > itemError {
 		return lexSkipOp
 	}
 	if isAlphaNumeric(rn) {
 		return lexAlpha
 	}
 
+	if rn == '#' {
+		return lexComment
+	}
+
 	if rn == eof {
 		return nil
 	}
-	return l.errorf("invalid line %s", rn)
+	return l.errorf("invalid line %v", rn)
 }
 
 func lexSkipOp(l *lexer) stateFn {
 	r := l.next()
-	if r == '+' {
-		l.emit(itemSkipDown)
-	} else if r == '-' {
-		l.emit(itemSkipUp)
-	} else {
-		return l.errorf("+/- is required but got %s", r)
-	}
+	l.emit(operators[r])
 	// right after this must be alpha
 	rn := l.peek()
 	if isAlpha(rn) {
 		return lexAlpha
 	}
 
-	return l.errorf("want alpha got %s", rn)
+	return l.errorf("want alpha got %v", rn)
 }
 
 func lexAlpha(l *lexer) stateFn {
@@ -217,7 +225,7 @@ func lexAlpha(l *lexer) stateFn {
 }
 
 func lexColon(l *lexer) stateFn {
-	l.next()
+	l.discard(':')
 	l.emit(itemColon)
 
 	r := l.peek()
@@ -231,13 +239,25 @@ func lexColon(l *lexer) stateFn {
 	if isAlphaNumeric(r) {
 		return lexAlpha
 	}
-	return l.errorf("expected white space/string or alpha got %s", r)
+	return l.errorf("expected white space/string or alpha got %v", r)
+}
+
+func lexComment(l *lexer) stateFn {
+	for {
+		if r := l.next(); r == '\n' || r == eof {
+			l.backup()
+			break
+		}
+	}
+	l.emit(itemComment)
+	if l.peek() == eof {
+		return nil
+	}
+	return lexNewLine
 }
 
 func lexString(l *lexer) stateFn {
-	if rn := l.next(); rn != '"' {
-		return l.errorf("want \" got %s", rn)
-	}
+	l.discard('"')
 	for {
 		rn := l.next()
 		if rn == eof {
@@ -246,7 +266,7 @@ func lexString(l *lexer) stateFn {
 		if rn == '\\' {
 			rn = l.next()
 			if rn != '"' {
-				return l.errorf("unknown escaped character: %s", rn)
+				return l.errorf("unknown escaped character: %v", rn)
 			}
 			continue
 		}
@@ -260,9 +280,7 @@ func lexString(l *lexer) stateFn {
 }
 
 func lexOption(l *lexer) stateFn {
-	if rn := l.next(); rn != '`' {
-		return l.errorf("want ` got %s", rn)
-	}
+	l.discard('`')
 	for {
 		rn := l.next()
 		if rn == eof {
@@ -283,6 +301,10 @@ func lexWhiteSpaceNewLine(l *lexer) stateFn {
 	}
 	if rn == '\n' {
 		return lexNewLine
+	}
+
+	if rn == '#' {
+		return lexComment
 	}
 
 	if rn == eof {
@@ -312,9 +334,12 @@ func lexWhiteSpace(l *lexer) stateFn {
 	if rn == '"' {
 		return lexString
 	}
+	if rn == '#' {
+		return lexComment
+	}
 
 	if rn == eof {
 		return nil
 	}
-	return l.errorf("invalid char after white space : %s", rn)
+	return l.errorf("invalid char after white space : %v", rn)
 }

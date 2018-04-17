@@ -2,7 +2,7 @@ name example
 
 create schema example
 
-   ;; Scope is started from the next line
+   # Scope is started from the next line
    +create table people
        set engine inno `mysql`
        set primary no `mysql:"ss"`

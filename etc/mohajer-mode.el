@@ -2,7 +2,7 @@
 
 (define-generic-mode
     'mohajer-mode                          ;; name of the mode
-  '(";;")                                  ;; comments delimiter
+  '("#")                                  ;; comments delimiter
   '("table" "schema" "column" "index" "option" "primary" "engine")
   '(
     ("\\(`[^`]+`\\)" 1 font-lock-warning-face)
