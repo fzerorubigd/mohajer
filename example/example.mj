@@ -1,0 +1,29 @@
+name example
+
+create schema example
+
+   ;; Scope is started from the next line
+   +create table people
+       set engine inno `mysql`
+       set primary no `mysql:"ss"`
+       add column user type:string default:10 comment:"string" 
+       add column age int
+
+       add index hola age
+   end
+
+   use table people
+       change column user name:user_name
+       -change column age default:0
+       change column user type:string
+   end
+
+   use table people
+       rename table zombies
+       add column test string `mysql:"option"`
+   end
+   
+   +use table zombies
+       remove column test string
+   end
+end
